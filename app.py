@@ -1,5 +1,3 @@
-# app.py
-
 from langchain.prompts import ChatPromptTemplate
 from langchain.document_loaders import UnstructuredFileLoader
 from langchain.embeddings import CacheBackedEmbeddings, OpenAIEmbeddings
@@ -32,21 +30,24 @@ class ChatCallbackHandler(BaseCallbackHandler):
         self.message += token
         self.message_box.markdown(self.message)
 
+# Sidebar: API key + file upload + GitHub link
 with st.sidebar:
     api_key = st.text_input("Enter your OpenAI API Key", type="password")
     file = st.file_uploader("Upload a .txt .pdf or .docx file", type=["pdf", "txt", "docx"])
     st.markdown("---")
     st.markdown("[📂 GitHub Repo](https://github.com/your/repo)")
 
-llm = ChatOpenAI(
-    temperature=0.1,
-    streaming=True,
-    openai_api_key=api_key,
-    callbacks=[ChatCallbackHandler()],
-)
+llm = None
+if api_key:
+    llm = ChatOpenAI(
+        temperature=0.1,
+        streaming=True,
+        openai_api_key=api_key,
+        callbacks=[ChatCallbackHandler()],
+    )
 
 @st.cache_data(show_spinner="Embedding file...")
-def embed_file(file):
+def embed_file(file, api_key):
     file_content = file.read()
     file_path = f"./.cache/files/{file.name}"
     with open(file_path, "wb") as f:
@@ -112,8 +113,8 @@ Upload your files on the sidebar.
 """
 )
 
-if file and api_key:
-    retriever = embed_file(file)
+if file and api_key and llm:
+    retriever = embed_file(file, api_key)
     send_message("I'm ready! Ask away!", "ai", save=False)
     paint_history()
     message = st.chat_input("Ask anything about your file...")
