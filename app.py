@@ -1,21 +1,20 @@
-from langchain.prompts import ChatPromptTemplate
+import streamlit as st
 from langchain.document_loaders import UnstructuredFileLoader
 from langchain.embeddings import CacheBackedEmbeddings, OpenAIEmbeddings
-from langchain.schema.runnable import RunnableLambda, RunnablePassthrough
 from langchain.storage import LocalFileStore
 from langchain.text_splitter import CharacterTextSplitter
 from langchain.vectorstores.faiss import FAISS
 from langchain.chat_models import ChatOpenAI
+from langchain.prompts import ChatPromptTemplate
+from langchain.schema.runnable import RunnableLambda, RunnablePassthrough
 from langchain.callbacks.base import BaseCallbackHandler
-import streamlit as st
+from pathlib import Path
 
 st.set_page_config(
-    page_title="DocumentGPT",
-    page_icon="📃",
+    page_title="Assignment #15",
+    page_icon="📜",
 )
 
-if "messages" not in st.session_state:
-    st.session_state["messages"] = []
 
 class ChatCallbackHandler(BaseCallbackHandler):
     message = ""
@@ -30,45 +29,38 @@ class ChatCallbackHandler(BaseCallbackHandler):
         self.message += token
         self.message_box.markdown(self.message)
 
-# Sidebar: API key + file upload + GitHub link
-with st.sidebar:
-    api_key = st.text_input("Enter your OpenAI API Key", type="password")
-    file = st.file_uploader("Upload a .txt .pdf or .docx file", type=["pdf", "txt", "docx"])
-    st.markdown("---")
-    st.markdown("[📂 GitHub Repo](https://github.com/your/repo)")
 
-llm = None
-if api_key:
-    llm = ChatOpenAI(
-        temperature=0.1,
-        streaming=True,
-        openai_api_key=api_key,
-        callbacks=[ChatCallbackHandler()],
-    )
+if "messages" not in st.session_state:
+    st.session_state["messages"] = []
+
 
 @st.cache_data(show_spinner="Embedding file...")
-def embed_file(file, api_key):
+def embed_file(file):
     file_content = file.read()
     file_path = f"./.cache/files/{file.name}"
-    with open(file_path, "wb") as f:
+    Path("./.cache/files").mkdir(parents=True, exist_ok=True)
+    with open(file_path, "wb+") as f:
         f.write(file_content)
-
     cache_dir = LocalFileStore(f"./.cache/embeddings/{file.name}")
     splitter = CharacterTextSplitter.from_tiktoken_encoder(
         separator="\n",
         chunk_size=600,
         chunk_overlap=100,
     )
-    loader = UnstructuredFileLoader(file_path)
+    loader = UnstructuredFileLoader(f"{file_path}")
     docs = loader.load_and_split(text_splitter=splitter)
-    embeddings = OpenAIEmbeddings(openai_api_key=api_key)
+    embeddings = OpenAIEmbeddings(
+        openai_api_key=openai_api_key,
+    )
     cached_embeddings = CacheBackedEmbeddings.from_bytes_store(embeddings, cache_dir)
     vectorstore = FAISS.from_documents(docs, cached_embeddings)
     retriever = vectorstore.as_retriever()
     return retriever
 
+
 def save_message(message, role):
     st.session_state["messages"].append({"message": message, "role": role})
+
 
 def send_message(message, role, save=True):
     with st.chat_message(role):
@@ -76,24 +68,23 @@ def send_message(message, role, save=True):
     if save:
         save_message(message, role)
 
+
 def paint_history():
     for message in st.session_state["messages"]:
-        send_message(
-            message["message"],
-            message["role"],
-            save=False,
-        )
+        send_message(message["message"], message["role"], save=False)
+
 
 def format_docs(docs):
     return "\n\n".join(document.page_content for document in docs)
+
 
 prompt = ChatPromptTemplate.from_messages(
     [
         (
             "system",
             """
-            Answer the question using ONLY the following context. If you don't know the answer just say you don't know. DON'T make anything up.
-            
+            Answer the question using ONLY the following context. If you don't know the answer just say you don't know. DON't make anything up
+
             Context: {context}
             """,
         ),
@@ -101,7 +92,45 @@ prompt = ChatPromptTemplate.from_messages(
     ]
 )
 
-st.title("DocumentGPT")
+
+def main():
+    if not openai_api_key:
+        return
+
+    llm = ChatOpenAI(
+        temperature=0.1,
+        streaming=True,
+        openai_api_key=openai_api_key,
+        callbacks=[
+            ChatCallbackHandler(),
+        ],
+    )
+
+    if file:
+        retriever = embed_file(file)
+
+        send_message("I'm ready! Ask away!", "ai", save=False)
+        paint_history()
+        message = st.chat_input("Ask anything about your file.....")
+        if message:
+            send_message(message, "human")
+            chain = (
+                {
+                    "context": retriever | RunnableLambda(format_docs),
+                    "question": RunnablePassthrough(),
+                }
+                | prompt
+                | llm
+            )
+            with st.chat_message("ai"):
+                chain.invoke(message)
+
+    else:
+        st.session_state["messages"] = []
+        return
+
+
+st.title("Document GPT")
 
 st.markdown(
     """
@@ -109,28 +138,24 @@ Welcome!
             
 Use this chatbot to ask questions to an AI about your files!
 
-Upload your files on the sidebar.
+1. Input your OpenAI API Key on the sidebar
+2. Upload your file on the sidebar.
+3. Ask questions related to the document.
 """
 )
 
-if file and api_key and llm:
-    retriever = embed_file(file, api_key)
-    send_message("I'm ready! Ask away!", "ai", save=False)
-    paint_history()
-    message = st.chat_input("Ask anything about your file...")
-    if message:
-        send_message(message, "human")
-        chain = (
-            {
-                "context": retriever | RunnableLambda(format_docs),
-                "question": RunnablePassthrough(),
-            }
-            | prompt
-            | llm
-        )
-        with st.chat_message("ai"):
-            response = chain.invoke(message)
-            send_message(response.content, "ai")
-else:
-    if not api_key:
-        st.warning("Please enter your OpenAI API Key in the sidebar.")
+with st.sidebar:
+    # API Key 입력
+    openai_api_key = st.text_input("Input your OpenAI API Key")
+
+    # 파일 선택
+    file = st.file_uploader(
+        "Upload a. txt .pdf or .docx file",
+        type=["pdf", "txt", "docx"],
+    )
+
+try:
+    main()
+except Exception as e:
+    st.error("Check your OpenAI API Key or File")
+    st.write(e)
