@@ -31,7 +31,6 @@ def load_cloudflare_docs(api_key: str):
     #     doc for doc in docs
     #     if any(x in doc.metadata["loc"] for x in ["ai-gateway", "vectorize", "workers-ai"])
     # ]
-    docs = loader.load()
 
     # Cloudflare 제품 문서만 필터링
     docs = [
