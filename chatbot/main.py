@@ -64,11 +64,12 @@ if not api_key:
 
 llm = ChatOpenAI(temperature=0.1, openai_api_key=api_key)
 memory = MemoryManager(openai_api_key=api_key)
-retriever = load_cloudflare_docs(api_key)
 
+retriever = None
 query = st.text_input("Ask a question about Cloudflare AI products")
 
 if query:
+    retriever = load_cloudflare_docs(api_key)
     cached = memory.check_cache(query)
     if cached:
         st.markdown(f"**(Cached)**\n\n{cached}")
